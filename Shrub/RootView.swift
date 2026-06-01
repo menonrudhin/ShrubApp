@@ -15,6 +15,12 @@ struct RootView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onChange(of: selection) { _, _ in
+            // Paging keeps both pages alive, so the amount field can stay
+            // first responder after a swipe. Resign it whenever the page changes.
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        }
         .task { seedCategoriesIfNeeded() }
     }
 
