@@ -36,9 +36,17 @@ struct SummaryView: View {
         }
     }
 
-    private var categoryTotals: [(name: String, total: Double)] {
+    private var categoryTotalsYearly: [(name: String, total: Double)] {
         var totals = [String: Double]()
         for expense in yearExpenses {
+            totals[expense.category, default: 0] += expense.amount
+        }
+        return totals.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+    }
+    
+    private var categoryTotalsMonthly: [(name: String, total: Double)] {
+        var totals = [String: Double]()
+        for expense in yearExpenses where calendar.component(.month, from: expense.date) == currentMonth {
             totals[expense.category, default: 0] += expense.amount
         }
         return totals.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
@@ -66,7 +74,9 @@ struct SummaryView: View {
                         points: dailyPoints
                     )
 
-                    categorySection
+                    categorySectionMonthly
+                    
+                    categorySectionYearly
                 }
                 .padding(20)
             }
@@ -100,19 +110,19 @@ struct SummaryView: View {
         .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    private var categorySection: some View {
+    private var categorySectionYearly: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("By Category")
+            Text("By Category - This Year")
                 .font(.headline)
 
-            if categoryTotals.isEmpty {
+            if categoryTotalsYearly.isEmpty {
                 Text("No expenses yet. Add one from the home screen.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(Array(categoryTotals.enumerated()), id: \.element.name) { index, row in
+                    ForEach(Array(categoryTotalsYearly.enumerated()), id: \.element.name) { index, row in
                         NavigationLink(value: row.name) {
                             HStack {
                                 Text(row.name)
@@ -127,7 +137,45 @@ struct SummaryView: View {
                             }
                             .padding(.vertical, 14)
                         }
-                        if index < categoryTotals.count - 1 {
+                        if index < categoryTotalsYearly.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+        }
+    }
+    
+    private var categorySectionMonthly: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("By Category - This Month")
+                .font(.headline)
+
+            if categoryTotalsMonthly.isEmpty {
+                Text("No expenses yet. Add one from the home screen.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(categoryTotalsMonthly.enumerated()), id: \.element.name) { index, row in
+                        NavigationLink(value: row.name) {
+                            HStack {
+                                Text(row.name)
+                                    .foregroundStyle(.primary)
+                                    .accessibilityIdentifier("category_\(row.name)")
+                                Spacer()
+                                Text(row.total.asCurrency)
+                                    .foregroundStyle(.secondary)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 14)
+                        }
+                        if index < categoryTotalsMonthly.count - 1 {
                             Divider()
                         }
                     }
