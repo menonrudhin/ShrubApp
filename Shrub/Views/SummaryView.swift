@@ -84,6 +84,9 @@ struct SummaryView: View {
             .navigationDestination(for: String.self) { category in
                 CategoryDetailView(category: category)
             }
+            .navigationDestination(for: MonthlyCategoryRoute.self) { route in
+                CategoryMonthDetailView(category: route.category)
+            }
         }
     }
 
@@ -161,11 +164,11 @@ struct SummaryView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(categoryTotalsMonthly.enumerated()), id: \.element.name) { index, row in
-                        NavigationLink(value: row.name) {
+                        NavigationLink(value: MonthlyCategoryRoute(category: row.name)) {
                             HStack {
                                 Text(row.name)
                                     .foregroundStyle(.primary)
-                                    .accessibilityIdentifier("category_\(row.name)")
+                                    .accessibilityIdentifier("monthCategory_\(row.name)")
                                 Spacer()
                                 Text(row.total.asCurrency)
                                     .foregroundStyle(.secondary)
