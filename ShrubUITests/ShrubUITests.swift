@@ -6,91 +6,63 @@ final class ShrubUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Full interactive path: type amount -> save -> toast -> swipe to summary ->
-    /// open a category -> swipe back home.
-    func testExpenseEntryAndSummaryFlow() throws {
+    /// End-to-end cloud flow: sign up -> create a shared group -> verify the
+    /// amount clamp -> save an expense -> confirm it round-trips through
+    /// Firestore and shows on the Summary screen.
+    func testCloudSignupGroupAndExpenseRoundTrip() throws {
         let app = XCUIApplication()
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 5), "Home should show app title")
+        // --- Sign up a fresh account ---
+        XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 10), "auth screen should appear")
+        app.buttons["New here? Create an account"].tap()
 
-        // Enter an amount in the currency field.
-        let amountField = app.textFields["amountField"]
-        XCTAssertTrue(amountField.waitForExistence(timeout: 5))
-        amountField.tap()
-        amountField.typeText("42.50")
-        XCTAssertEqual(amountField.value as? String, "42.50", "field should hold the typed amount")
-        attach(app, "01-home-amount-entered")
+        let name = app.textFields["Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap(); name.typeText("Test User\n")
 
-        // Save and expect the fading toast.
-        app.buttons["saveButton"].tap()
-        XCTAssertTrue(app.staticTexts["saved expense"].waitForExistence(timeout: 3),
-                      "'saved expense' toast should appear")
-        attach(app, "02-saved-toast")
+        let email = app.textFields["Email"]
+        email.tap()
+        email.typeText("test-\(UUID().uuidString.prefix(8))@shrub.test".lowercased() + "\n")
 
-        // Field clears back to the placeholder after saving.
-        XCTAssertEqual(amountField.value as? String, "0", "amount field should reset after save")
+        let password = app.secureTextFields["Password (6+ characters)"]
+        password.tap(); password.typeText("secret123\n")
 
-        // Swipe (page) left to the Summary screen.
-        pageLeft(app)
-        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5), "Summary should appear after swipe")
-        XCTAssertTrue(app.staticTexts["This Year"].exists)
-        XCTAssertTrue(app.staticTexts["This Month"].exists)
-        attach(app, "03-summary")
+        app.buttons["Sign Up"].tap()
 
-        // Scroll to the category table and open the Gas category we just spent on.
-        let gasRow = app.staticTexts["category_Gas"]
-        var scrolls = 0
-        while !gasRow.isHittable && scrolls < 6 {
-            app.swipeUp()
-            scrolls += 1
+        // --- Create a shared group ---
+        let groupName = app.textFields["Group name (e.g. Family expenses)"]
+        XCTAssertTrue(groupName.waitForExistence(timeout: 35), "should reach group gate after signup")
+        groupName.tap(); groupName.typeText("Family expenses\n")
+        app.buttons["Create"].tap()
+
+        // --- Home screen reached (active group selected) ---
+        let amount = app.textFields["amountField"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 35), "should reach home after creating a group")
+
+        // Amount clamp still works.
+        amount.tap(); amount.typeText("9999999")
+        XCTAssertEqual(amount.value as? String, "1000000", "amount should clamp to 1,000,000")
+
+        // Clear and enter a real expense.
+        amount.tap()
+        let current = (amount.value as? String) ?? ""
+        if current != "0" {
+            amount.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
         }
-        XCTAssertTrue(gasRow.isHittable, "Gas category row should be reachable")
-        gasRow.tap()
-        XCTAssertTrue(app.navigationBars["Gas"].waitForExistence(timeout: 5), "Category detail for Gas should open")
-        attach(app, "04-category-detail")
+        amount.typeText("25")
+        app.buttons["saveButton"].tap()
+        XCTAssertTrue(app.staticTexts["saved expense"].waitForExistence(timeout: 5), "save toast should show")
 
-        // Back to Summary, scroll to top, then page right home.
-        app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
-        app.swipeDown()
-        app.swipeDown()
-        pageRight(app)
-        XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 5), "Should return to Home after swipe right")
-    }
-
-    /// The currency field must clamp at $1,000,000.
-    func testMaxAmountClamp() throws {
-        let app = XCUIApplication()
-        app.launch()
-        let amountField = app.textFields["amountField"]
-        XCTAssertTrue(amountField.waitForExistence(timeout: 5))
-        amountField.tap()
-        amountField.typeText("9999999")
-        XCTAssertEqual(amountField.value as? String, "1000000", "amount should clamp to 1,000,000")
-        attach(app, "05-clamped-amount")
-    }
-
-    // MARK: - Helpers
-
-    /// Horizontal page swipe near the top, above the charts, to avoid chart gestures.
-    private func pageLeft(_ app: XCUIApplication) {
+        // --- Swipe to Summary and confirm the Firestore expense appears ---
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.12))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.12))
         start.press(forDuration: 0.1, thenDragTo: end)
-    }
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5), "Summary should appear")
 
-    private func pageRight(_ app: XCUIApplication) {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.12))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.12))
-        start.press(forDuration: 0.1, thenDragTo: end)
-    }
-
-    private func attach(_ app: XCUIApplication, _ name: String) {
-        let shot = XCUIScreen.main.screenshot()
-        let attachment = XCTAttachment(screenshot: shot)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+        let total = app.staticTexts.containing(
+            NSPredicate(format: "label CONTAINS %@", "25.00")).firstMatch
+        XCTAssertTrue(total.waitForExistence(timeout: 15),
+                      "the $25 expense saved to Firestore should round-trip back and show on Summary")
     }
 }

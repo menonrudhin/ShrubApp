@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A user can read/write only their own profile document.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /groups/{groupId} {
+      // Members of a group can read it and update it (e.g. join adds a member).
+      allow read, update: if request.auth != null
+        && request.auth.uid in resource.data.memberIds;
+
+      // Anyone signed in can create a group, as long as they list themselves
+      // as creator and as the sole initial member.
+      allow create: if request.auth != null
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid];
+
+      // Expenses are readable/writable by members of the parent group.
+      match /expenses/{expenseId} {
+        allow read, write: if request.auth != null
+          && request.auth.uid in
+             get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+      }
+    }
+  }
+}

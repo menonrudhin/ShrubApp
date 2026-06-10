@@ -1,5 +1,4 @@
 import SwiftUI
-import SwiftData
 
 /// Navigation route for a "By Category - This Month" row. A distinct type (vs a
 /// bare String) lets the Summary screen send month taps here while year taps
@@ -13,19 +12,17 @@ struct MonthlyCategoryRoute: Hashable {
 struct CategoryMonthDetailView: View {
     let category: String
 
-    @Query private var expenses: [Expense]
+    @EnvironmentObject private var app: AppModel
     private let calendar = Calendar.current
 
-    init(category: String) {
-        self.category = category
-        let predicate = #Predicate<Expense> { $0.category == category }
-        _expenses = Query(filter: predicate, sort: \Expense.date)
+    private var expenses: [ExpenseItem] {
+        app.expenses.filter { $0.category == category }
     }
 
     private var currentYear: Int { calendar.component(.year, from: .now) }
     private var currentMonth: Int { calendar.component(.month, from: .now) }
 
-    private var monthExpenses: [Expense] {
+    private var monthExpenses: [ExpenseItem] {
         expenses.filter {
             calendar.component(.year, from: $0.date) == currentYear &&
             calendar.component(.month, from: $0.date) == currentMonth

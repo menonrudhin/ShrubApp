@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct HomeView: View {
+    @EnvironmentObject private var app: AppModel
     @Environment(\.modelContext) private var context
     @Query(sort: \ExpenseCategory.sortOrder) private var categories: [ExpenseCategory]
     @StateObject private var location = LocationManager()
@@ -68,11 +69,42 @@ struct HomeView: View {
             Text("Shrub")
                 .font(.title2.weight(.semibold))
             Spacer()
-            Text(Date.now, format: .dateTime.month(.abbreviated).day())
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            groupMenu
         }
         .padding(.top, 12)
+    }
+
+    private var groupMenu: some View {
+        Menu {
+            Section(app.activeGroup?.name ?? "Group") {
+                ForEach(app.groups) { group in
+                    Button {
+                        app.selectGroup(group.id)
+                    } label: {
+                        Label(group.name, systemImage: group.id == app.activeGroupId ? "checkmark" : "person.2")
+                    }
+                }
+            }
+            if let code = app.activeGroup?.inviteCode {
+                Button {
+                    UIPasteboard.general.string = code
+                } label: {
+                    Label("Copy invite code (\(code))", systemImage: "doc.on.doc")
+                }
+            }
+            Divider()
+            Button { app.selectGroup(nil) } label: { Label("New / join group", systemImage: "plus") }
+            Button(role: .destructive) { app.signOut() } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "person.2.fill").font(.caption)
+                Text(app.activeGroup?.name ?? "Group")
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityIdentifier("groupMenu")
     }
 
     private var entryCard: some View {
@@ -192,17 +224,18 @@ struct HomeView: View {
 
     private func save() {
         guard canSave else { return }
-        let expense = Expense(
-            category: selectedCategory,
-            amount: min(amount, maxAmount),
-            date: .now,
-            locationName: location.locationName,
-            latitude: location.latitude,
-            longitude: location.longitude
-        )
-        context.insert(expense)
-        try? context.save()
-
+        let value = min(amount, maxAmount)
+        let category = selectedCategory
+        Task {
+            await app.addExpense(
+                category: category,
+                amount: value,
+                date: .now,
+                locationName: location.locationName,
+                latitude: location.latitude,
+                longitude: location.longitude
+            )
+        }
         amountText = ""
         triggerToast()
         location.refresh()

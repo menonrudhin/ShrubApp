@@ -1,16 +1,13 @@
 import SwiftUI
-import SwiftData
 
 struct CategoryDetailView: View {
     let category: String
 
-    @Query private var expenses: [Expense]
+    @EnvironmentObject private var app: AppModel
     private let calendar = Calendar.current
 
-    init(category: String) {
-        self.category = category
-        let predicate = #Predicate<Expense> { $0.category == category }
-        _expenses = Query(filter: predicate, sort: \Expense.date)
+    private var expenses: [ExpenseItem] {
+        app.expenses.filter { $0.category == category }
     }
 
     private var currentYear: Int { calendar.component(.year, from: .now) }

@@ -1,15 +1,16 @@
 import SwiftUI
-import SwiftData
 
 struct SummaryView: View {
-    @Query private var expenses: [Expense]
+    @EnvironmentObject private var app: AppModel
+
+    private var expenses: [ExpenseItem] { app.expenses }
 
     private let calendar = Calendar.current
 
     private var currentYear: Int { calendar.component(.year, from: .now) }
     private var currentMonth: Int { calendar.component(.month, from: .now) }
 
-    private var yearExpenses: [Expense] {
+    private var yearExpenses: [ExpenseItem] {
         expenses.filter { calendar.component(.year, from: $0.date) == currentYear }
     }
 
