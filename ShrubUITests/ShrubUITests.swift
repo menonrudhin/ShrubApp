@@ -58,6 +58,9 @@ final class ShrubUITests: XCTestCase {
                       "migrated local expenses ($77 + $33) should total $110 on Summary")
         XCTAssertTrue(containsText(app, "77.00").waitForExistence(timeout: 10),
                       "migrated Grocery expense should appear")
+        // Recent-activity attribution shows the migrated expenses as "Rudhin".
+        XCTAssertTrue(containsText(app, "Rudhin").waitForExistence(timeout: 10),
+                      "recent activity should attribute migrated expenses to Rudhin")
     }
 
     // MARK: - Helpers

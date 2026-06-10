@@ -75,6 +75,8 @@ struct SummaryView: View {
                         points: dailyPoints
                     )
 
+                    recentActivitySection
+
                     categorySectionMonthly
                     
                     categorySectionYearly
@@ -188,6 +190,58 @@ struct SummaryView: View {
                 .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
+    }
+
+    // Most recent expenses across the group, newest first.
+    private var recentExpenses: [ExpenseItem] {
+        Array(expenses.sorted { $0.date > $1.date }.prefix(15))
+    }
+
+    private var recentActivitySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Recent activity")
+                .font(.headline)
+
+            if recentExpenses.isEmpty {
+                Text("No expenses yet. Add one from the home screen.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(recentExpenses.enumerated()), id: \.element.id) { index, item in
+                        HStack(spacing: 12) {
+                            Text(Self.initial(item.createdByName))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Theme.accent)
+                                .frame(width: 32, height: 32)
+                                .background(Circle().fill(Theme.accent.opacity(0.2)))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.category)
+                                    .foregroundStyle(.primary)
+                                Text("\(item.createdByName) · \(item.date.formatted(.dateTime.month(.abbreviated).day()))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(item.amount.asCurrency)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 12)
+                        if index < recentExpenses.count - 1 {
+                            Divider()
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+        }
+    }
+
+    private static func initial(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespaces).first ?? "?").uppercased()
     }
 
     static let monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
