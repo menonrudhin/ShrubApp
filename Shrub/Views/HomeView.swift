@@ -1,9 +1,7 @@
 import SwiftUI
-import SwiftData
 
 struct HomeView: View {
-    @Environment(\.modelContext) private var context
-    @Query(sort: \ExpenseCategory.sortOrder) private var categories: [ExpenseCategory]
+    @EnvironmentObject private var app: AppModel
     @StateObject private var location = LocationManager()
 
     @FocusState private var amountFocused: Bool
@@ -42,11 +40,11 @@ struct HomeView: View {
             location.requestPermission()
             location.refresh()
             if selectedCategory.isEmpty {
-                selectedCategory = categories.first?.name ?? "Grocery"
+                selectedCategory = app.categories.first ?? ""
             }
         }
-        .onChange(of: categories.map(\.name)) { _, names in
-            if !names.contains(selectedCategory) {
+        .onChange(of: app.categories) { _, names in
+            if selectedCategory.isEmpty || !names.contains(selectedCategory) {
                 selectedCategory = names.first ?? ""
             }
         }
@@ -68,11 +66,42 @@ struct HomeView: View {
             Text("Shrub")
                 .font(.title2.weight(.semibold))
             Spacer()
-            Text(Date.now, format: .dateTime.month(.abbreviated).day())
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            groupMenu
         }
         .padding(.top, 12)
+    }
+
+    private var groupMenu: some View {
+        Menu {
+            Section(app.activeGroup?.name ?? "Group") {
+                ForEach(app.groups) { group in
+                    Button {
+                        app.selectGroup(group.id)
+                    } label: {
+                        Label(group.name, systemImage: group.id == app.activeGroupId ? "checkmark" : "person.2")
+                    }
+                }
+            }
+            if let code = app.activeGroup?.inviteCode {
+                Button {
+                    UIPasteboard.general.string = code
+                } label: {
+                    Label("Copy invite code (\(code))", systemImage: "doc.on.doc")
+                }
+            }
+            Divider()
+            Button { app.selectGroup(nil) } label: { Label("New / join group", systemImage: "plus") }
+            Button(role: .destructive) { app.signOut() } label: { Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right") }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "person.2.fill").font(.caption)
+                Text(app.activeGroup?.name ?? "Group")
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityIdentifier("groupMenu")
     }
 
     private var entryCard: some View {
@@ -86,8 +115,8 @@ struct HomeView: View {
 
     private var categoryMenu: some View {
         Menu {
-            ForEach(categories) { category in
-                Button(category.name) { selectedCategory = category.name }
+            ForEach(app.categories, id: \.self) { category in
+                Button(category) { selectedCategory = category }
             }
             Divider()
             Button {
@@ -192,17 +221,18 @@ struct HomeView: View {
 
     private func save() {
         guard canSave else { return }
-        let expense = Expense(
-            category: selectedCategory,
-            amount: min(amount, maxAmount),
-            date: .now,
-            locationName: location.locationName,
-            latitude: location.latitude,
-            longitude: location.longitude
-        )
-        context.insert(expense)
-        try? context.save()
-
+        let value = min(amount, maxAmount)
+        let category = selectedCategory
+        Task {
+            await app.addExpense(
+                category: category,
+                amount: value,
+                date: .now,
+                locationName: location.locationName,
+                latitude: location.latitude,
+                longitude: location.longitude
+            )
+        }
         amountText = ""
         triggerToast()
         location.refresh()
@@ -211,9 +241,8 @@ struct HomeView: View {
     private func addCategory() {
         let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         newCategoryName = ""
-        guard !name.isEmpty, !categories.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return }
-        context.insert(ExpenseCategory(name: name, sortOrder: categories.count))
-        try? context.save()
+        guard !name.isEmpty else { return }
+        Task { await app.addCategory(name) }
         selectedCategory = name
     }
 

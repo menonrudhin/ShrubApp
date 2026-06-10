@@ -15,7 +15,9 @@ xcuserdata/
 # Swift Package Manager
 .swiftpm/
 .build/
-Package.resolved
 
 # Claude local settings
 .claude/
+
+# Firebase config (per-developer; contains API keys)
+GoogleService-Info.plist

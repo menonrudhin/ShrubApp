@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // A user can read/write only their own profile document.
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /groups/{groupId} {
+      // Any signed-in user can read a group. This is required so someone can
+      // look the group up by invite code in order to join it. (Group expenses
+      // stay protected by the member-only rule on the subcollection below.)
+      allow read: if request.auth != null;
+
+      // Create a group: caller must be the creator and the sole initial member.
+      allow create: if request.auth != null
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid];
+
+      // Update is allowed for existing members, OR for a signed-in user joining
+      // themselves — i.e. the new memberIds equals the old set plus only the
+      // caller's own uid (no removals, no adding anyone else).
+      allow update: if request.auth != null && (
+        request.auth.uid in resource.data.memberIds
+        || (
+          request.auth.uid in request.resource.data.memberIds
+          && request.resource.data.memberIds.hasAll(resource.data.memberIds)
+          && request.resource.data.memberIds.hasOnly(resource.data.memberIds.concat([request.auth.uid]))
+        )
+      );
+
+      // Expenses: only members of the parent group.
+      match /expenses/{expenseId} {
+        allow read, write: if request.auth != null
+          && request.auth.uid in
+             get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+      }
+
+      // Shared categories: only members of the parent group.
+      match /categories/{categoryId} {
+        allow read, write: if request.auth != null
+          && request.auth.uid in
+             get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds;
+      }
+    }
+  }
+}

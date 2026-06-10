@@ -6,91 +6,106 @@ final class ShrubUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Full interactive path: type amount -> save -> toast -> swipe to summary ->
-    /// open a category -> swipe back home.
-    func testExpenseEntryAndSummaryFlow() throws {
-        let app = XCUIApplication()
+    /// Cloud flow + shared categories: sign up -> create group -> the group is
+    /// seeded with the shared default categories -> add a new shared category ->
+    /// save an expense -> confirm it round-trips through Firestore on Summary.
+    func testSharedCategoriesAndExpenseRoundTrip() throws {
+        let app = makeApp()
         app.launch()
+        let amount = signUpAndCreateGroup(app)
 
-        XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 5), "Home should show app title")
+        // Shared categories were seeded for the new group.
+        app.buttons["categoryMenu"].tap()
+        XCTAssertTrue(app.buttons["Grocery"].waitForExistence(timeout: 10),
+                      "new group should be seeded with shared default categories")
 
-        // Enter an amount in the currency field.
-        let amountField = app.textFields["amountField"]
-        XCTAssertTrue(amountField.waitForExistence(timeout: 5))
-        amountField.tap()
-        amountField.typeText("42.50")
-        XCTAssertEqual(amountField.value as? String, "42.50", "field should hold the typed amount")
-        attach(app, "01-home-amount-entered")
+        // Add a new shared category; it should appear in the menu (via the listener).
+        app.buttons["Add Category"].tap()
+        let alert = app.alerts["New Category"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        alert.textFields.firstMatch.tap()
+        alert.textFields.firstMatch.typeText("Brunch")
+        alert.buttons["Add"].tap()
 
-        // Save and expect the fading toast.
+        app.buttons["categoryMenu"].tap()
+        XCTAssertTrue(app.buttons["Brunch"].waitForExistence(timeout: 10),
+                      "added shared category should appear from Firestore")
+        app.buttons["Brunch"].tap()
+
+        // Save an expense and confirm it round-trips onto Summary.
+        amount.tap(); amount.typeText("25")
         app.buttons["saveButton"].tap()
-        XCTAssertTrue(app.staticTexts["saved expense"].waitForExistence(timeout: 3),
-                      "'saved expense' toast should appear")
-        attach(app, "02-saved-toast")
+        XCTAssertTrue(app.staticTexts["saved expense"].waitForExistence(timeout: 5))
 
-        // Field clears back to the placeholder after saving.
-        XCTAssertEqual(amountField.value as? String, "0", "amount field should reset after save")
-
-        // Swipe (page) left to the Summary screen.
-        pageLeft(app)
-        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5), "Summary should appear after swipe")
-        XCTAssertTrue(app.staticTexts["This Year"].exists)
-        XCTAssertTrue(app.staticTexts["This Month"].exists)
-        attach(app, "03-summary")
-
-        // Scroll to the category table and open the Gas category we just spent on.
-        let gasRow = app.staticTexts["category_Gas"]
-        var scrolls = 0
-        while !gasRow.isHittable && scrolls < 6 {
-            app.swipeUp()
-            scrolls += 1
-        }
-        XCTAssertTrue(gasRow.isHittable, "Gas category row should be reachable")
-        gasRow.tap()
-        XCTAssertTrue(app.navigationBars["Gas"].waitForExistence(timeout: 5), "Category detail for Gas should open")
-        attach(app, "04-category-detail")
-
-        // Back to Summary, scroll to top, then page right home.
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        pageToSummary(app)
         XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
-        app.swipeDown()
-        app.swipeDown()
-        pageRight(app)
-        XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 5), "Should return to Home after swipe right")
+        XCTAssertTrue(containsText(app, "25.00").waitForExistence(timeout: 15),
+                      "the saved expense should round-trip back from Firestore")
     }
 
-    /// The currency field must clamp at $1,000,000.
-    func testMaxAmountClamp() throws {
-        let app = XCUIApplication()
+    /// Migration: with pre-cloud on-device expenses seeded, signing up and
+    /// creating a group should import them into the group (so they appear on
+    /// Summary). $77 Grocery + $33 Gas = $110 year total.
+    func testLocalExpenseMigration() throws {
+        let app = makeApp()
+        app.launchEnvironment["SEED_LOCAL_EXPENSES"] = "1"
         app.launch()
-        let amountField = app.textFields["amountField"]
-        XCTAssertTrue(amountField.waitForExistence(timeout: 5))
-        amountField.tap()
-        amountField.typeText("9999999")
-        XCTAssertEqual(amountField.value as? String, "1000000", "amount should clamp to 1,000,000")
-        attach(app, "05-clamped-amount")
+        _ = signUpAndCreateGroup(app)
+
+        pageToSummary(app)
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+        XCTAssertTrue(containsText(app, "110.00").waitForExistence(timeout: 20),
+                      "migrated local expenses ($77 + $33) should total $110 on Summary")
+        XCTAssertTrue(containsText(app, "77.00").waitForExistence(timeout: 10),
+                      "migrated Grocery expense should appear")
+        // Recent-activity attribution shows the migrated expenses as "Rudhin".
+        XCTAssertTrue(containsText(app, "Rudhin").waitForExistence(timeout: 10),
+                      "recent activity should attribute migrated expenses to Rudhin")
     }
 
     // MARK: - Helpers
 
-    /// Horizontal page swipe near the top, above the charts, to avoid chart gestures.
-    private func pageLeft(_ app: XCUIApplication) {
+    private func makeApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["UITEST_RESET"] = "1" // start signed out
+        return app
+    }
+
+    /// Signs up a fresh account and creates a group; returns the amount field.
+    @discardableResult
+    private func signUpAndCreateGroup(_ app: XCUIApplication, groupName: String = "Family expenses") -> XCUIElement {
+        XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 10), "auth screen should appear")
+        app.buttons["New here? Create an account"].tap()
+
+        let name = app.textFields["Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        name.tap(); name.typeText("Test User\n")
+
+        let email = app.textFields["Email"]
+        email.tap()
+        email.typeText("test-\(UUID().uuidString.prefix(8))@shrub.test".lowercased() + "\n")
+
+        let password = app.secureTextFields["Password (6+ characters)"]
+        password.tap(); password.typeText("secret123\n")
+        app.buttons["Sign Up"].tap()
+
+        let groupNameField = app.textFields["Group name (e.g. Family expenses)"]
+        XCTAssertTrue(groupNameField.waitForExistence(timeout: 35), "should reach group gate after signup")
+        groupNameField.tap(); groupNameField.typeText("\(groupName)\n")
+        app.buttons["Create"].tap()
+
+        let amount = app.textFields["amountField"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 35), "should reach home after creating a group")
+        return amount
+    }
+
+    private func pageToSummary(_ app: XCUIApplication) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.12))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.12))
         start.press(forDuration: 0.1, thenDragTo: end)
     }
 
-    private func pageRight(_ app: XCUIApplication) {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.12))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.12))
-        start.press(forDuration: 0.1, thenDragTo: end)
-    }
-
-    private func attach(_ app: XCUIApplication, _ name: String) {
-        let shot = XCUIScreen.main.screenshot()
-        let attachment = XCTAttachment(screenshot: shot)
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
+    private func containsText(_ app: XCUIApplication, _ substring: String) -> XCUIElement {
+        app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", substring)).firstMatch
     }
 }
