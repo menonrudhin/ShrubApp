@@ -28,6 +28,16 @@ struct ExpenseGroup: Identifiable, Hashable {
     }
 }
 
+/// A plain payload for migrating an on-device expense into a group.
+struct LocalExpense {
+    let category: String
+    let amount: Double
+    let date: Date
+    let locationName: String?
+    let latitude: Double?
+    let longitude: Double?
+}
+
 /// One expense within a group, attributed to the member who entered it.
 /// Plain value type the SwiftUI views compute over (mapped from Firestore).
 struct ExpenseItem: Identifiable, Hashable {

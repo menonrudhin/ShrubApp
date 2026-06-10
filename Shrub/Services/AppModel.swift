@@ -10,6 +10,7 @@ final class AppModel: ObservableObject {
     @Published var groups: [ExpenseGroup] = []
     @Published var activeGroupId: String?
     @Published var expenses: [ExpenseItem] = []
+    @Published var categories: [String] = []
     @Published var isWorking = false
     @Published var errorMessage: String?
 
@@ -17,6 +18,7 @@ final class AppModel: ObservableObject {
     private var authHandle: AuthStateDidChangeListenerHandle?
     private var groupsListener: ListenerRegistration?
     private var expensesListener: ListenerRegistration?
+    private var categoriesListener: ListenerRegistration?
 
     private let activeGroupKey = "activeGroupId"
 
@@ -27,6 +29,10 @@ final class AppModel: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
+        if ProcessInfo.processInfo.environment["UITEST_RESET"] == "1" {
+            try? Auth.auth().signOut()
+            UserDefaults.standard.removeObject(forKey: activeGroupKey)
+        }
         activeGroupId = UserDefaults.standard.string(forKey: activeGroupKey)
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, fbUser in
             guard let self else { return }
@@ -47,8 +53,10 @@ final class AppModel: ObservableObject {
     private func teardownData() {
         groupsListener?.remove(); groupsListener = nil
         expensesListener?.remove(); expensesListener = nil
+        categoriesListener?.remove(); categoriesListener = nil
         groups = []
         expenses = []
+        categories = []
     }
 
     // MARK: - Authentication
@@ -94,7 +102,7 @@ final class AppModel: ObservableObject {
                 if self.activeGroupId == nil || !self.groups.contains(where: { $0.id == self.activeGroupId }) {
                     self.selectGroup(self.groups.first?.id)
                 } else {
-                    self.observeExpenses()
+                    self.attachActiveGroupListeners()
                 }
             }
     }
@@ -106,7 +114,12 @@ final class AppModel: ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: activeGroupKey)
         }
+        attachActiveGroupListeners()
+    }
+
+    private func attachActiveGroupListeners() {
         observeExpenses()
+        observeCategories()
     }
 
     func createGroup(name: String) async {
@@ -121,6 +134,13 @@ final class AppModel: ObservableObject {
                 "memberIds": [user.id],
                 "members": [user.id: ["name": user.displayName, "email": user.email]]
             ])
+            // Seed the shared default categories for the new group.
+            let batch = self.db.batch()
+            for (index, categoryName) in ExpenseCategory.defaults.enumerated() {
+                let catRef = ref.collection("categories").document()
+                batch.setData(["name": categoryName, "sortOrder": index], forDocument: catRef)
+            }
+            try await batch.commit()
             self.selectGroup(ref.documentID)
         }
     }
@@ -175,6 +195,57 @@ final class AppModel: ObservableObject {
             data["longitude"] = longitude
             try await self.db.collection("groups").document(groupId)
                 .collection("expenses").addDocument(data: data)
+        }
+    }
+
+    /// Bulk-import on-device expenses into the active group (one-time migration).
+    func importLocalExpenses(_ items: [LocalExpense], createdByName name: String) async {
+        guard let user, let groupId = activeGroupId, !items.isEmpty else { return }
+        await run {
+            let batch = self.db.batch()
+            let coll = self.db.collection("groups").document(groupId).collection("expenses")
+            for item in items {
+                var data: [String: Any] = [
+                    "category": item.category,
+                    "amount": item.amount,
+                    "date": Timestamp(date: item.date),
+                    "createdBy": user.id,
+                    "createdByName": name
+                ]
+                data["locationName"] = item.locationName
+                data["latitude"] = item.latitude
+                data["longitude"] = item.longitude
+                batch.setData(data, forDocument: coll.document())
+            }
+            try await batch.commit()
+        }
+    }
+
+    // MARK: - Categories (shared per group)
+
+    private func observeCategories() {
+        categoriesListener?.remove()
+        categories = []
+        guard let groupId = activeGroupId else { return }
+        categoriesListener = db.collection("groups").document(groupId)
+            .collection("categories")
+            .order(by: "sortOrder")
+            .addSnapshotListener { [weak self] snapshot, _ in
+                self?.categories = (snapshot?.documents ?? [])
+                    .compactMap { $0.data()["name"] as? String }
+            }
+    }
+
+    func addCategory(_ name: String) async {
+        guard let groupId = activeGroupId else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              !categories.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) else { return }
+        let order = categories.count
+        await run {
+            try await self.db.collection("groups").document(groupId)
+                .collection("categories")
+                .addDocument(data: ["name": trimmed, "sortOrder": order])
         }
     }
 

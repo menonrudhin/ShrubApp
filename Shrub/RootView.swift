@@ -6,8 +6,10 @@ import SwiftData
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.modelContext) private var context
-    @Query private var categories: [ExpenseCategory]
+    @Query private var localExpenses: [Expense]
     @State private var selection = 0
+
+    private let migrationKey = "didMigrateLocalExpenses"
 
     var body: some View {
         Group {
@@ -19,7 +21,21 @@ struct RootView: View {
                 pagedHome
             }
         }
-        .task { seedCategoriesIfNeeded() }
+        .task { seedLocalExpensesForUITestingIfRequested() }
+        // Migrate any pre-cloud on-device expenses into the active group, once.
+        .task(id: app.activeGroupId) { migrateLocalExpensesIfNeeded() }
+    }
+
+    /// Test hook: when launched with SEED_LOCAL_EXPENSES=1, plant a couple of
+    /// on-device expenses (as if from before cloud sync) and reset the migration
+    /// flag, so the UI test can verify migration into a freshly created group.
+    private func seedLocalExpensesForUITestingIfRequested() {
+        guard ProcessInfo.processInfo.environment["SEED_LOCAL_EXPENSES"] == "1" else { return }
+        UserDefaults.standard.set(false, forKey: migrationKey)
+        guard localExpenses.isEmpty else { return }
+        context.insert(Expense(category: "Grocery", amount: 77, date: .now))
+        context.insert(Expense(category: "Gas", amount: 33, date: .now))
+        try? context.save()
     }
 
     private var pagedHome: some View {
@@ -37,11 +53,23 @@ struct RootView: View {
         }
     }
 
-    private func seedCategoriesIfNeeded() {
-        guard categories.isEmpty else { return }
-        for (index, name) in ExpenseCategory.defaults.enumerated() {
-            context.insert(ExpenseCategory(name: name, sortOrder: index))
+    private func migrateLocalExpensesIfNeeded() {
+        guard app.activeGroupId != nil,
+              !UserDefaults.standard.bool(forKey: migrationKey),
+              !localExpenses.isEmpty else { return }
+
+        let payload = localExpenses.map {
+            LocalExpense(category: $0.category, amount: $0.amount, date: $0.date,
+                         locationName: $0.locationName, latitude: $0.latitude, longitude: $0.longitude)
         }
-        try? context.save()
+        Task {
+            await app.importLocalExpenses(payload, createdByName: "Rudhin")
+            if app.errorMessage == nil {
+                // Mark done and clear the on-device copies now they live in the cloud.
+                UserDefaults.standard.set(true, forKey: migrationKey)
+                for expense in localExpenses { context.delete(expense) }
+                try? context.save()
+            }
+        }
     }
 }

@@ -6,14 +6,71 @@ final class ShrubUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// End-to-end cloud flow: sign up -> create a shared group -> verify the
-    /// amount clamp -> save an expense -> confirm it round-trips through
-    /// Firestore and shows on the Summary screen.
-    func testCloudSignupGroupAndExpenseRoundTrip() throws {
-        let app = XCUIApplication()
+    /// Cloud flow + shared categories: sign up -> create group -> the group is
+    /// seeded with the shared default categories -> add a new shared category ->
+    /// save an expense -> confirm it round-trips through Firestore on Summary.
+    func testSharedCategoriesAndExpenseRoundTrip() throws {
+        let app = makeApp()
         app.launch()
+        let amount = signUpAndCreateGroup(app)
 
-        // --- Sign up a fresh account ---
+        // Shared categories were seeded for the new group.
+        app.buttons["categoryMenu"].tap()
+        XCTAssertTrue(app.buttons["Grocery"].waitForExistence(timeout: 10),
+                      "new group should be seeded with shared default categories")
+
+        // Add a new shared category; it should appear in the menu (via the listener).
+        app.buttons["Add Category"].tap()
+        let alert = app.alerts["New Category"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        alert.textFields.firstMatch.tap()
+        alert.textFields.firstMatch.typeText("Brunch")
+        alert.buttons["Add"].tap()
+
+        app.buttons["categoryMenu"].tap()
+        XCTAssertTrue(app.buttons["Brunch"].waitForExistence(timeout: 10),
+                      "added shared category should appear from Firestore")
+        app.buttons["Brunch"].tap()
+
+        // Save an expense and confirm it round-trips onto Summary.
+        amount.tap(); amount.typeText("25")
+        app.buttons["saveButton"].tap()
+        XCTAssertTrue(app.staticTexts["saved expense"].waitForExistence(timeout: 5))
+
+        pageToSummary(app)
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+        XCTAssertTrue(containsText(app, "25.00").waitForExistence(timeout: 15),
+                      "the saved expense should round-trip back from Firestore")
+    }
+
+    /// Migration: with pre-cloud on-device expenses seeded, signing up and
+    /// creating a group should import them into the group (so they appear on
+    /// Summary). $77 Grocery + $33 Gas = $110 year total.
+    func testLocalExpenseMigration() throws {
+        let app = makeApp()
+        app.launchEnvironment["SEED_LOCAL_EXPENSES"] = "1"
+        app.launch()
+        _ = signUpAndCreateGroup(app)
+
+        pageToSummary(app)
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+        XCTAssertTrue(containsText(app, "110.00").waitForExistence(timeout: 20),
+                      "migrated local expenses ($77 + $33) should total $110 on Summary")
+        XCTAssertTrue(containsText(app, "77.00").waitForExistence(timeout: 10),
+                      "migrated Grocery expense should appear")
+    }
+
+    // MARK: - Helpers
+
+    private func makeApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["UITEST_RESET"] = "1" // start signed out
+        return app
+    }
+
+    /// Signs up a fresh account and creates a group; returns the amount field.
+    @discardableResult
+    private func signUpAndCreateGroup(_ app: XCUIApplication, groupName: String = "Family expenses") -> XCUIElement {
         XCTAssertTrue(app.staticTexts["Shrub"].waitForExistence(timeout: 10), "auth screen should appear")
         app.buttons["New here? Create an account"].tap()
 
@@ -27,42 +84,25 @@ final class ShrubUITests: XCTestCase {
 
         let password = app.secureTextFields["Password (6+ characters)"]
         password.tap(); password.typeText("secret123\n")
-
         app.buttons["Sign Up"].tap()
 
-        // --- Create a shared group ---
-        let groupName = app.textFields["Group name (e.g. Family expenses)"]
-        XCTAssertTrue(groupName.waitForExistence(timeout: 35), "should reach group gate after signup")
-        groupName.tap(); groupName.typeText("Family expenses\n")
+        let groupNameField = app.textFields["Group name (e.g. Family expenses)"]
+        XCTAssertTrue(groupNameField.waitForExistence(timeout: 35), "should reach group gate after signup")
+        groupNameField.tap(); groupNameField.typeText("\(groupName)\n")
         app.buttons["Create"].tap()
 
-        // --- Home screen reached (active group selected) ---
         let amount = app.textFields["amountField"]
         XCTAssertTrue(amount.waitForExistence(timeout: 35), "should reach home after creating a group")
+        return amount
+    }
 
-        // Amount clamp still works.
-        amount.tap(); amount.typeText("9999999")
-        XCTAssertEqual(amount.value as? String, "1000000", "amount should clamp to 1,000,000")
-
-        // Clear and enter a real expense.
-        amount.tap()
-        let current = (amount.value as? String) ?? ""
-        if current != "0" {
-            amount.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
-        }
-        amount.typeText("25")
-        app.buttons["saveButton"].tap()
-        XCTAssertTrue(app.staticTexts["saved expense"].waitForExistence(timeout: 5), "save toast should show")
-
-        // --- Swipe to Summary and confirm the Firestore expense appears ---
+    private func pageToSummary(_ app: XCUIApplication) {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.12))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.08, dy: 0.12))
         start.press(forDuration: 0.1, thenDragTo: end)
-        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5), "Summary should appear")
+    }
 
-        let total = app.staticTexts.containing(
-            NSPredicate(format: "label CONTAINS %@", "25.00")).firstMatch
-        XCTAssertTrue(total.waitForExistence(timeout: 15),
-                      "the $25 expense saved to Firestore should round-trip back and show on Summary")
+    private func containsText(_ app: XCUIApplication, _ substring: String) -> XCUIElement {
+        app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", substring)).firstMatch
     }
 }

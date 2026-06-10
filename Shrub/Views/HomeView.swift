@@ -1,10 +1,7 @@
 import SwiftUI
-import SwiftData
 
 struct HomeView: View {
     @EnvironmentObject private var app: AppModel
-    @Environment(\.modelContext) private var context
-    @Query(sort: \ExpenseCategory.sortOrder) private var categories: [ExpenseCategory]
     @StateObject private var location = LocationManager()
 
     @FocusState private var amountFocused: Bool
@@ -43,11 +40,11 @@ struct HomeView: View {
             location.requestPermission()
             location.refresh()
             if selectedCategory.isEmpty {
-                selectedCategory = categories.first?.name ?? "Grocery"
+                selectedCategory = app.categories.first ?? ""
             }
         }
-        .onChange(of: categories.map(\.name)) { _, names in
-            if !names.contains(selectedCategory) {
+        .onChange(of: app.categories) { _, names in
+            if selectedCategory.isEmpty || !names.contains(selectedCategory) {
                 selectedCategory = names.first ?? ""
             }
         }
@@ -118,8 +115,8 @@ struct HomeView: View {
 
     private var categoryMenu: some View {
         Menu {
-            ForEach(categories) { category in
-                Button(category.name) { selectedCategory = category.name }
+            ForEach(app.categories, id: \.self) { category in
+                Button(category) { selectedCategory = category }
             }
             Divider()
             Button {
@@ -244,9 +241,8 @@ struct HomeView: View {
     private func addCategory() {
         let name = newCategoryName.trimmingCharacters(in: .whitespacesAndNewlines)
         newCategoryName = ""
-        guard !name.isEmpty, !categories.contains(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { return }
-        context.insert(ExpenseCategory(name: name, sortOrder: categories.count))
-        try? context.save()
+        guard !name.isEmpty else { return }
+        Task { await app.addCategory(name) }
         selectedCategory = name
     }
 
