@@ -63,6 +63,21 @@ final class ShrubUITests: XCTestCase {
                       "recent activity should attribute migrated expenses to Rudhin")
     }
 
+    /// First-run swipe tutorial: shows the "Swipe left for your Summary" coach
+    /// mark on Home, and dismisses (and stays dismissed) after tapping "Got it".
+    func testSwipeTutorialFirstRun() throws {
+        let app = makeApp()
+        app.launchEnvironment["SHOW_SWIPE_HINT"] = "1"
+        app.launch()
+        _ = signUpAndCreateGroup(app)
+
+        XCTAssertTrue(app.staticTexts["Swipe left for your Summary"].waitForExistence(timeout: 10),
+                      "first-run swipe tutorial should appear on Home")
+        app.buttons["Got it"].tap()
+        XCTAssertFalse(app.staticTexts["Swipe left for your Summary"].waitForExistence(timeout: 2),
+                       "tutorial should dismiss after Got it")
+    }
+
     // MARK: - Helpers
 
     private func makeApp() -> XCUIApplication {

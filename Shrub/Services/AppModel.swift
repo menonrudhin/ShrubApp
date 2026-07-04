@@ -32,6 +32,9 @@ final class AppModel: ObservableObject {
         if ProcessInfo.processInfo.environment["UITEST_RESET"] == "1" {
             try? Auth.auth().signOut()
             UserDefaults.standard.removeObject(forKey: activeGroupKey)
+            // Suppress the first-run swipe tutorial in tests unless explicitly requested.
+            let showHint = ProcessInfo.processInfo.environment["SHOW_SWIPE_HINT"] == "1"
+            UserDefaults.standard.set(!showHint, forKey: "hasSeenSwipeHint")
         }
         activeGroupId = UserDefaults.standard.string(forKey: activeGroupKey)
         authHandle = Auth.auth().addStateDidChangeListener { [weak self] _, fbUser in
