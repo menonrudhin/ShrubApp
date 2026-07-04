@@ -11,6 +11,10 @@ struct HomeView: View {
     @State private var showAddCategory = false
     @State private var newCategoryName = ""
 
+    @AppStorage("hasSeenSwipeHint") private var hasSeenSwipeHint = false
+    @State private var showSwipeHint = false
+    @State private var hintArrowShift = false
+
     private let maxAmount: Double = 1_000_000
 
     private var amount: Double { Double(amountText) ?? 0 }
@@ -33,6 +37,8 @@ struct HomeView: View {
             .padding(.horizontal, 24)
 
             toast
+
+            swipeHintOverlay
         }
         .contentShape(Rectangle())
         .onTapGesture { amountFocused = false }
@@ -41,6 +47,9 @@ struct HomeView: View {
             location.refresh()
             if selectedCategory.isEmpty {
                 selectedCategory = app.categories.first ?? ""
+            }
+            if !hasSeenSwipeHint {
+                withAnimation(.easeInOut(duration: 0.4)) { showSwipeHint = true }
             }
         }
         .onChange(of: app.categories) { _, names in
@@ -199,6 +208,59 @@ struct HomeView: View {
         }
         .padding(.bottom, 80)
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private var swipeHintOverlay: some View {
+        if showSwipeHint {
+            ZStack {
+                Color.black.opacity(0.65)
+                    .ignoresSafeArea()
+                    .onTapGesture { dismissSwipeHint() }
+
+                VStack(spacing: 16) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "chevron.compact.left")
+                        Image(systemName: "chevron.compact.left").opacity(0.55)
+                        Image(systemName: "chevron.compact.left").opacity(0.25)
+                    }
+                    .font(.system(size: 46, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .offset(x: hintArrowShift ? -14 : 10)
+
+                    Text("Swipe left for your Summary")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white)
+                    Text("Your charts and category breakdowns are one swipe away.")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.75))
+                        .multilineTextAlignment(.center)
+
+                    Button(action: dismissSwipeHint) {
+                        Text("Got it")
+                            .font(.headline)
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 12)
+                            .background(Theme.accent, in: Capsule())
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.top, 4)
+                }
+                .padding(32)
+                .accessibilityIdentifier("swipeHint")
+            }
+            .transition(.opacity)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    hintArrowShift = true
+                }
+            }
+        }
+    }
+
+    private func dismissSwipeHint() {
+        hasSeenSwipeHint = true
+        withAnimation(.easeInOut(duration: 0.3)) { showSwipeHint = false }
     }
 
     // MARK: - Actions
