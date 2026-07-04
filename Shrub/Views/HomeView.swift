@@ -218,36 +218,44 @@ struct HomeView: View {
                     .ignoresSafeArea()
                     .onTapGesture { dismissSwipeHint() }
 
-                VStack(spacing: 16) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "chevron.compact.left")
-                        Image(systemName: "chevron.compact.left").opacity(0.55)
-                        Image(systemName: "chevron.compact.left").opacity(0.25)
-                    }
-                    .font(.system(size: 46, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .offset(x: hintArrowShift ? -14 : 10)
+                VStack {
+                    Spacer()
 
-                    Text("Swipe left for your Summary")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Text("Your charts and category breakdowns are one swipe away.")
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.75))
-                        .multilineTextAlignment(.center)
+                    VStack(spacing: 16) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "chevron.compact.left")
+                            Image(systemName: "chevron.compact.left").opacity(0.55)
+                            Image(systemName: "chevron.compact.left").opacity(0.25)
+                        }
+                        .font(.system(size: 46, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                        .offset(x: hintArrowShift ? -14 : 10)
 
-                    Button(action: dismissSwipeHint) {
-                        Text("Got it")
-                            .font(.headline)
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 12)
-                            .background(Theme.accent, in: Capsule())
+                        Text("Swipe left for your Summary")
+                            .font(.title3.weight(.semibold))
                             .foregroundStyle(.white)
+                        Text("Your charts and category breakdowns are one swipe away.")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.75))
+                            .multilineTextAlignment(.center)
+
+                        Button(action: dismissSwipeHint) {
+                            Text("Got it")
+                                .font(.headline)
+                                .padding(.horizontal, 32)
+                                .padding(.vertical, 12)
+                                .background(Theme.accent, in: Capsule())
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.top, 4)
                     }
-                    .padding(.top, 4)
+                    .padding(28)
+                    .background(Theme.cardBackground.opacity(0.92),
+                                in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .accessibilityIdentifier("swipeHint")
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 48)
                 }
-                .padding(32)
-                .accessibilityIdentifier("swipeHint")
             }
             .transition(.opacity)
             .onAppear {
