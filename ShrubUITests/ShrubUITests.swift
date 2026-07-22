@@ -78,6 +78,21 @@ final class ShrubUITests: XCTestCase {
                        "tutorial should dismiss after Got it")
     }
 
+    /// Category monthly limit: with a $50 Grocery limit seeded and $77 of Grocery
+    /// spend migrated in, the monthly summary should flag Grocery as over limit.
+    func testCategoryOverMonthlyLimit() throws {
+        let app = makeApp()
+        app.launchEnvironment["SEED_LOCAL_EXPENSES"] = "1"           // Grocery $77, Gas $33
+        app.launchEnvironment["SEED_CATEGORY_LIMIT"] = "Grocery:50"  // limit below spend
+        app.launch()
+        _ = signUpAndCreateGroup(app)
+
+        pageToSummary(app)
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+        XCTAssertTrue(containsText(app, "Over $50.00 limit").waitForExistence(timeout: 20),
+                      "Grocery ($77) should be flagged over its $50 monthly limit")
+    }
+
     // MARK: - Helpers
 
     private func makeApp() -> XCUIApplication {
@@ -106,8 +121,14 @@ final class ShrubUITests: XCTestCase {
 
         let groupNameField = app.textFields["Group name (e.g. Family expenses)"]
         XCTAssertTrue(groupNameField.waitForExistence(timeout: 35), "should reach group gate after signup")
-        groupNameField.tap(); groupNameField.typeText("\(groupName)\n")
-        app.buttons["Create"].tap()
+        // Let the auth -> group-gate transition / re-render burst settle so the
+        // field can hold keyboard focus.
+        Thread.sleep(forTimeInterval: 2)
+        groupNameField.tap()
+        groupNameField.typeText("\(groupName)\n")
+        let createButton = app.buttons["Create"]
+        XCTAssertTrue(createButton.waitUntilHittable(timeout: 10))
+        createButton.tap()
 
         let amount = app.textFields["amountField"]
         XCTAssertTrue(amount.waitForExistence(timeout: 35), "should reach home after creating a group")
@@ -122,5 +143,17 @@ final class ShrubUITests: XCTestCase {
 
     private func containsText(_ app: XCUIApplication, _ substring: String) -> XCUIElement {
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", substring)).firstMatch
+    }
+}
+
+extension XCUIElement {
+    /// Poll until the element is hittable (handles keyboard dismiss / transition timing).
+    func waitUntilHittable(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if isHittable { return true }
+            usleep(200_000)
+        }
+        return isHittable
     }
 }

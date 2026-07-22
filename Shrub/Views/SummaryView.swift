@@ -167,14 +167,23 @@ struct SummaryView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(categoryTotalsMonthly.enumerated()), id: \.element.name) { index, row in
+                        let limit = app.monthlyLimit(for: row.name)
+                        let isOver = (limit.map { row.total > $0 }) ?? false
                         NavigationLink(value: MonthlyCategoryRoute(category: row.name)) {
                             HStack {
-                                Text(row.name)
-                                    .foregroundStyle(.primary)
-                                    .accessibilityIdentifier("monthCategory_\(row.name)")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.name)
+                                        .foregroundStyle(isOver ? Color.red : .primary)
+                                        .accessibilityIdentifier("monthCategory_\(row.name)")
+                                    if let limit {
+                                        Text(isOver ? "Over \(limit.asCurrency) limit" : "Limit \(limit.asCurrency)")
+                                            .font(.caption)
+                                            .foregroundStyle(isOver ? Color.red : .secondary)
+                                    }
+                                }
                                 Spacer()
                                 Text(row.total.asCurrency)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(isOver ? Color.red : .secondary)
                                 Image(systemName: "chevron.right")
                                     .font(.caption)
                                     .foregroundStyle(.tertiary)

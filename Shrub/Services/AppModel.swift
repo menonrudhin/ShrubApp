@@ -10,9 +10,17 @@ final class AppModel: ObservableObject {
     @Published var groups: [ExpenseGroup] = []
     @Published var activeGroupId: String?
     @Published var expenses: [ExpenseItem] = []
-    @Published var categories: [String] = []
+    @Published var categories: [CategoryItem] = []
     @Published var isWorking = false
     @Published var errorMessage: String?
+
+    /// Category names in sort order (for pickers).
+    var categoryNames: [String] { categories.map(\.name) }
+
+    /// The monthly spending limit set for a category, if any.
+    func monthlyLimit(for category: String) -> Double? {
+        categories.first { $0.name == category }?.monthlyLimit
+    }
 
     private let db = Firestore.firestore()
     private var authHandle: AuthStateDidChangeListenerHandle?
@@ -138,10 +146,15 @@ final class AppModel: ObservableObject {
                 "members": [user.id: ["name": user.displayName, "email": user.email]]
             ])
             // Seed the shared default categories for the new group.
+            let seedLimit = Self.testSeedCategoryLimit()
             let batch = self.db.batch()
             for (index, categoryName) in ExpenseCategory.defaults.enumerated() {
                 let catRef = ref.collection("categories").document()
-                batch.setData(["name": categoryName, "sortOrder": index], forDocument: catRef)
+                var data: [String: Any] = ["name": categoryName, "sortOrder": index]
+                if let seedLimit, seedLimit.name == categoryName {
+                    data["monthlyLimit"] = seedLimit.amount
+                }
+                batch.setData(data, forDocument: catRef)
             }
             try await batch.commit()
             self.selectGroup(ref.documentID)
@@ -234,8 +247,16 @@ final class AppModel: ObservableObject {
             .collection("categories")
             .order(by: "sortOrder")
             .addSnapshotListener { [weak self] snapshot, _ in
-                self?.categories = (snapshot?.documents ?? [])
-                    .compactMap { $0.data()["name"] as? String }
+                self?.categories = (snapshot?.documents ?? []).compactMap { doc in
+                    let d = doc.data()
+                    guard let name = d["name"] as? String else { return nil }
+                    return CategoryItem(
+                        id: doc.documentID,
+                        name: name,
+                        sortOrder: d["sortOrder"] as? Int ?? 0,
+                        monthlyLimit: d["monthlyLimit"] as? Double
+                    )
+                }
             }
     }
 
@@ -243,12 +264,27 @@ final class AppModel: ObservableObject {
         guard let groupId = activeGroupId else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              !categories.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) else { return }
+              !categories.contains(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) else { return }
         let order = categories.count
         await run {
             try await self.db.collection("groups").document(groupId)
                 .collection("categories")
                 .addDocument(data: ["name": trimmed, "sortOrder": order])
+        }
+    }
+
+    /// Set (or clear, when nil) the monthly spending limit for a category.
+    func setMonthlyLimit(for category: String, limit: Double?) async {
+        guard let groupId = activeGroupId,
+              let item = categories.first(where: { $0.name == category }) else { return }
+        await run {
+            let ref = self.db.collection("groups").document(groupId)
+                .collection("categories").document(item.id)
+            if let limit {
+                try await ref.updateData(["monthlyLimit": limit])
+            } else {
+                try await ref.updateData(["monthlyLimit": FieldValue.delete()])
+            }
         }
     }
 
@@ -263,6 +299,14 @@ final class AppModel: ObservableObject {
             errorMessage = (error as? AppError)?.text ?? error.localizedDescription
         }
         isWorking = false
+    }
+
+    /// Test hook: SEED_CATEGORY_LIMIT="Grocery:50" seeds a limit on that category.
+    private static func testSeedCategoryLimit() -> (name: String, amount: Double)? {
+        guard let raw = ProcessInfo.processInfo.environment["SEED_CATEGORY_LIMIT"],
+              let sep = raw.lastIndex(of: ":"),
+              let amount = Double(raw[raw.index(after: sep)...]) else { return nil }
+        return (String(raw[..<sep]), amount)
     }
 
     private static func makeInviteCode() -> String {
