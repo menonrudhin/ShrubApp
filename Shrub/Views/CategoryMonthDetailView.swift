@@ -15,9 +15,15 @@ struct CategoryMonthDetailView: View {
     @EnvironmentObject private var app: AppModel
     private let calendar = Calendar.current
 
+    @State private var showLimitEditor = false
+    @State private var limitText = ""
+
     private var expenses: [ExpenseItem] {
         app.expenses.filter { $0.category == category }
     }
+
+    private var monthlyLimit: Double? { app.monthlyLimit(for: category) }
+    private var isOverLimit: Bool { monthlyLimit.map { monthTotal > $0 } ?? false }
 
     private var currentYear: Int { calendar.component(.year, from: .now) }
     private var currentMonth: Int { calendar.component(.month, from: .now) }
@@ -79,6 +85,8 @@ struct CategoryMonthDetailView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
+                limitCard
+
                 ExpenseLineChart(points: dailyPoints)
                     .frame(height: 240)
                     .padding(18)
@@ -91,6 +99,62 @@ struct CategoryMonthDetailView: View {
         .background(Theme.primaryBackground.ignoresSafeArea())
         .navigationTitle(category)
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Monthly limit for \(category)", isPresented: $showLimitEditor) {
+            TextField("Amount", text: $limitText)
+                .keyboardType(.decimalPad)
+            Button("Save", action: saveLimit)
+            if monthlyLimit != nil {
+                Button("Remove limit", role: .destructive) {
+                    Task { await app.setMonthlyLimit(for: category, limit: nil) }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This category turns red on the summary when this month's spending goes over the limit.")
+        }
+    }
+
+    private var limitCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Monthly limit").font(.headline)
+                Spacer()
+                Button(monthlyLimit == nil ? "Set" : "Edit") {
+                    limitText = monthlyLimit.map { String(format: "%.0f", $0) } ?? ""
+                    showLimitEditor = true
+                }
+                .accessibilityIdentifier("editLimit")
+            }
+
+            if let limit = monthlyLimit {
+                ProgressView(value: min(monthTotal, limit), total: limit)
+                    .tint(isOverLimit ? .red : Theme.accent)
+                HStack {
+                    Text("\(monthTotal.asCurrency) of \(limit.asCurrency)")
+                        .font(.caption)
+                        .foregroundStyle(isOverLimit ? Color.red : .secondary)
+                    Spacer()
+                    if isOverLimit {
+                        Text("Over by \((monthTotal - limit).asCurrency)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                    }
+                }
+            } else {
+                Text("No limit set. Add one to track overspending on \(category).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func saveLimit() {
+        let cleaned = limitText.filter { $0.isNumber || $0 == "." }
+        guard let value = Double(cleaned), value > 0 else { return }
+        Task { await app.setMonthlyLimit(for: category, limit: value) }
     }
 
     private var expenseTable: some View {

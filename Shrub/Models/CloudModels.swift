@@ -28,6 +28,14 @@ struct ExpenseGroup: Identifiable, Hashable {
     }
 }
 
+/// A shared expense category within a group, with an optional monthly limit.
+struct CategoryItem: Identifiable, Hashable {
+    let id: String          // Firestore doc id
+    let name: String
+    let sortOrder: Int
+    let monthlyLimit: Double?
+}
+
 /// A plain payload for migrating an on-device expense into a group.
 struct LocalExpense {
     let category: String

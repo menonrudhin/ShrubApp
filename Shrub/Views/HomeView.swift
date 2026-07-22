@@ -46,13 +46,13 @@ struct HomeView: View {
             location.requestPermission()
             location.refresh()
             if selectedCategory.isEmpty {
-                selectedCategory = app.categories.first ?? ""
+                selectedCategory = app.categoryNames.first ?? ""
             }
             if !hasSeenSwipeHint {
                 withAnimation(.easeInOut(duration: 0.4)) { showSwipeHint = true }
             }
         }
-        .onChange(of: app.categories) { _, names in
+        .onChange(of: app.categoryNames) { _, names in
             if selectedCategory.isEmpty || !names.contains(selectedCategory) {
                 selectedCategory = names.first ?? ""
             }
@@ -124,7 +124,7 @@ struct HomeView: View {
 
     private var categoryMenu: some View {
         Menu {
-            ForEach(app.categories, id: \.self) { category in
+            ForEach(app.categoryNames, id: \.self) { category in
                 Button(category) { selectedCategory = category }
             }
             Divider()
