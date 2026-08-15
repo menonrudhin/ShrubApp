@@ -217,42 +217,98 @@ struct SummaryView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
+                Text("Swipe a row left to delete it.")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                 VStack(spacing: 0) {
                     ForEach(Array(recentExpenses.enumerated()), id: \.element.id) { index, item in
-                        HStack(spacing: 12) {
-                            Text(Self.initial(item.createdByName))
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(Theme.accent)
-                                .frame(width: 32, height: 32)
-                                .background(Circle().fill(Theme.accent.opacity(0.2)))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.category)
-                                    .foregroundStyle(.primary)
-                                Text("\(item.createdByName) · \(item.date.formatted(.dateTime.month(.abbreviated).day()))")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(item.amount.asCurrency)
-                                .foregroundStyle(.secondary)
+                        RecentActivityRow(item: item) {
+                            Task { await app.deleteExpense(item.id) }
                         }
-                        .padding(.vertical, 12)
                         if index < recentExpenses.count - 1 {
-                            Divider()
+                            Divider().padding(.leading, 18)
                         }
                     }
                 }
-                .padding(.horizontal, 18)
                 .background(Theme.cardBackground, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
     }
 
-    private static func initial(_ name: String) -> String {
+    static func initial(_ name: String) -> String {
         String(name.trimmingCharacters(in: .whitespaces).first ?? "?").uppercased()
     }
 
     static let monthAbbreviations = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+}
+
+/// A Recent-activity row that reveals a red Delete button when swiped left.
+private struct RecentActivityRow: View {
+    let item: ExpenseItem
+    let onDelete: () -> Void
+
+    @State private var offset: CGFloat = 0
+    private let revealWidth: CGFloat = 96
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                VStack(spacing: 3) {
+                    Image(systemName: "trash.fill")
+                    Text("Delete").font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(.white)
+                .frame(width: revealWidth)
+                .frame(maxHeight: .infinity)
+                .background(Color.red)
+            }
+            .accessibilityIdentifier("deleteExpense")
+
+            content
+                .background(Theme.cardBackground)
+                .offset(x: offset)
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            let base: CGFloat = offset <= -revealWidth ? -revealWidth : 0
+                            offset = min(0, max(-revealWidth, base + value.translation.width))
+                        }
+                        .onEnded { _ in
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                offset = offset < -revealWidth / 2 ? -revealWidth : 0
+                            }
+                        }
+                )
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: 12) {
+            Text(SummaryView.initial(item.createdByName))
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Theme.accent.opacity(0.2)))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.category)
+                    .foregroundStyle(.primary)
+                Text("\(item.createdByName) · \(item.date.formatted(.dateTime.month(.abbreviated).day()))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Text(item.amount.asCurrency)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
 }
