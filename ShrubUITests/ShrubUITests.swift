@@ -93,6 +93,32 @@ final class ShrubUITests: XCTestCase {
                       "Grocery ($77) should be flagged over its $50 monthly limit")
     }
 
+    /// Swipe-to-delete: with a migrated Grocery ($77) expense in Recent activity,
+    /// swiping the row left and tapping Delete removes it (from Firestore).
+    func testSwipeToDeleteRecentActivity() throws {
+        let app = makeApp()
+        app.launchEnvironment["SEED_LOCAL_EXPENSES"] = "1" // Grocery $77, Gas $33
+        app.launch()
+        _ = signUpAndCreateGroup(app)
+
+        pageToSummary(app)
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 5))
+
+        // The $77 Grocery expense shows in Recent activity.
+        let grocery = containsText(app, "77.00")
+        XCTAssertTrue(grocery.waitForExistence(timeout: 20), "migrated expense should appear")
+
+        // Swipe its row left and delete it.
+        grocery.swipeLeft()
+        let deleteButton = app.buttons["deleteExpense"].firstMatch
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5), "Delete button should reveal after swipe")
+        deleteButton.tap()
+
+        // It should disappear once removed from the database.
+        XCTAssertFalse(containsText(app, "77.00").waitForExistence(timeout: 10),
+                       "deleted expense should be gone from Recent activity")
+    }
+
     // MARK: - Helpers
 
     private func makeApp() -> XCUIApplication {

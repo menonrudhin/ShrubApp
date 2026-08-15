@@ -214,6 +214,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Permanently delete an expense from the active group.
+    func deleteExpense(_ id: String) async {
+        guard let groupId = activeGroupId else { return }
+        await run {
+            try await self.db.collection("groups").document(groupId)
+                .collection("expenses").document(id).delete()
+        }
+    }
+
     /// Bulk-import on-device expenses into the active group (one-time migration).
     func importLocalExpenses(_ items: [LocalExpense], createdByName name: String) async {
         guard let user, let groupId = activeGroupId, !items.isEmpty else { return }
