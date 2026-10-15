@@ -271,14 +271,18 @@ private struct RecentActivityRow: View {
             content
                 .background(Theme.cardBackground)
                 .offset(x: offset)
-                .gesture(
-                    DragGesture(minimumDistance: 10)
+                // simultaneousGesture so the row's horizontal swipe does NOT block
+                // the ScrollView's vertical scroll or the TabView's page-back swipe.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24)
                         .onChanged { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                            // Only engage for a clearly horizontal-left drag.
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
                             let base: CGFloat = offset <= -revealWidth ? -revealWidth : 0
                             offset = min(0, max(-revealWidth, base + value.translation.width))
                         }
-                        .onEnded { _ in
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.5 || offset != 0 else { return }
                             withAnimation(.easeOut(duration: 0.2)) {
                                 offset = offset < -revealWidth / 2 ? -revealWidth : 0
                             }

@@ -7,7 +7,7 @@ struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.modelContext) private var context
     @Query private var localExpenses: [Expense]
-    @State private var selection = 0
+    @State private var selection = ProcessInfo.processInfo.environment["START_ON_SUMMARY"] == "1" ? 1 : 0
 
     private let migrationKey = "didMigrateLocalExpenses"
 
