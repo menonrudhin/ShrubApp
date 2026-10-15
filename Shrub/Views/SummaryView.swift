@@ -245,11 +245,14 @@ struct SummaryView: View {
 }
 
 /// A Recent-activity row that reveals a red Delete button when swiped left.
+/// Uses simultaneousGesture (so vertical scroll and the TabView page-back swipe
+/// still work) and engages only on a horizontal-dominant drag.
 private struct RecentActivityRow: View {
     let item: ExpenseItem
     let onDelete: () -> Void
 
     @State private var offset: CGFloat = 0
+    @State private var engaged = false
     private let revealWidth: CGFloat = 96
 
     var body: some View {
@@ -271,20 +274,23 @@ private struct RecentActivityRow: View {
             content
                 .background(Theme.cardBackground)
                 .offset(x: offset)
-                // simultaneousGesture so the row's horizontal swipe does NOT block
-                // the ScrollView's vertical scroll or the TabView's page-back swipe.
                 .simultaneousGesture(
-                    DragGesture(minimumDistance: 24)
+                    DragGesture(minimumDistance: 14)
                         .onChanged { value in
-                            // Only engage for a clearly horizontal-left drag.
-                            guard abs(value.translation.width) > abs(value.translation.height) * 1.5 else { return }
+                            // Engage once the drag is clearly horizontal; ignore
+                            // vertical-dominant drags so the ScrollView can scroll.
+                            if !engaged {
+                                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                                engaged = true
+                            }
                             let base: CGFloat = offset <= -revealWidth ? -revealWidth : 0
                             offset = min(0, max(-revealWidth, base + value.translation.width))
                         }
-                        .onEnded { value in
-                            guard abs(value.translation.width) > abs(value.translation.height) * 1.5 || offset != 0 else { return }
+                        .onEnded { _ in
+                            defer { engaged = false }
                             withAnimation(.easeOut(duration: 0.2)) {
-                                offset = offset < -revealWidth / 2 ? -revealWidth : 0
+                                // Open if dragged more than a third of the way.
+                                offset = offset < -revealWidth / 3 ? -revealWidth : 0
                             }
                         }
                 )
