@@ -164,9 +164,14 @@ final class ShrubUITests: XCTestCase {
         while !app.staticTexts["Grocery"].firstMatch.isHittable && scrolls < 8 {
             anchor.swipeUp(); scrolls += 1
         }
-        app.staticTexts["Grocery"].firstMatch.swipeLeft()
-        XCTAssertTrue(app.buttons["deleteExpense"].firstMatch.waitForExistence(timeout: 5),
-                      "left swipe should reveal the Delete button")
+        let row = app.staticTexts["Grocery"].firstMatch
+        row.swipeLeft()
+        // The Delete button is always in the tree but only becomes hittable
+        // (uncovered) once the row is swiped open.
+        let deleteBtn = app.buttons["deleteExpense"].firstMatch
+        var tries = 0
+        while !deleteBtn.isHittable && tries < 10 { usleep(200_000); tries += 1 }
+        XCTAssertTrue(deleteBtn.isHittable, "left swipe should reveal (uncover) the Delete button")
     }
 
     // MARK: - Helpers
