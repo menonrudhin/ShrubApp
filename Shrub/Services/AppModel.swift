@@ -37,6 +37,22 @@ final class AppModel: ObservableObject {
     // MARK: - Lifecycle
 
     func start() {
+        if ProcessInfo.processInfo.environment["DEMO_MODE"] == "1" {
+            user = AuthUser(id: "demo", displayName: "Rudhin", email: "demo@shrub.test")
+            groups = [ExpenseGroup(id: "demo", name: "Family expenses", inviteCode: "FAM-DEMO1",
+                                   createdBy: "demo", memberIds: ["demo"],
+                                   members: ["demo": GroupMember(name: "Rudhin", email: "demo@shrub.test")])]
+            activeGroupId = "demo"
+            categories = [CategoryItem(id: "c1", name: "Grocery", sortOrder: 0, monthlyLimit: 50)]
+            expenses = (1...12).map { i in
+                ExpenseItem(id: "e\(i)", category: ["Grocery", "Gas", "Eat Out"][i % 3],
+                            amount: Double(10 + i * 5),
+                            date: Calendar.current.date(byAdding: .day, value: -i, to: .now) ?? .now,
+                            locationName: nil, createdBy: "demo",
+                            createdByName: i % 2 == 0 ? "Rudhin" : "Neha")
+            }
+            return
+        }
         if ProcessInfo.processInfo.environment["UITEST_RESET"] == "1" {
             try? Auth.auth().signOut()
             UserDefaults.standard.removeObject(forKey: activeGroupKey)

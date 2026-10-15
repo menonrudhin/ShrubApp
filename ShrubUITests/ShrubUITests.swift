@@ -119,6 +119,56 @@ final class ShrubUITests: XCTestCase {
                        "deleted expense should be gone from Recent activity")
     }
 
+    /// Regression for the Recent-activity gesture conflict: scrolling over the
+    /// list and the swipe-right "go back" page gesture must still work alongside
+    /// swipe-to-delete. Uses DEMO_MODE to avoid the flaky auth flow.
+    func testRecentActivityScrollAndBackGesture() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["DEMO_MODE"] = "1"
+        app.launchEnvironment["START_ON_SUMMARY"] = "1"
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Summary"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Recent activity"].waitForExistence(timeout: 5))
+
+        // Scroll down until a bottom row is reachable — proves vertical scroll
+        // works even with the swipe-to-delete rows present.
+        let anchor = app.scrollViews.firstMatch
+        var scrolls = 0
+        while !app.staticTexts["By Category - This Year"].isHittable && scrolls < 8 {
+            anchor.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(app.staticTexts["By Category - This Year"].isHittable,
+                      "should be able to scroll the Summary past Recent activity")
+
+        // Swipe-right over a recent-activity row should page back to Home.
+        while !app.staticTexts["Recent activity"].isHittable && scrolls < 16 {
+            anchor.swipeDown(); scrolls += 1
+        }
+        app.swipeRight()
+        XCTAssertTrue(app.buttons["saveButton"].waitForExistence(timeout: 5),
+                      "swiping right should return to Home")
+    }
+
+    /// A deliberate left swipe on a recent-activity row still reveals Delete.
+    func testRecentActivitySwipeRevealsDelete() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["DEMO_MODE"] = "1"
+        app.launchEnvironment["START_ON_SUMMARY"] = "1"
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Recent activity"].waitForExistence(timeout: 10))
+        let anchor = app.scrollViews.firstMatch
+        var scrolls = 0
+        while !app.staticTexts["Grocery"].firstMatch.isHittable && scrolls < 8 {
+            anchor.swipeUp(); scrolls += 1
+        }
+        app.staticTexts["Grocery"].firstMatch.swipeLeft()
+        XCTAssertTrue(app.buttons["deleteExpense"].firstMatch.waitForExistence(timeout: 5),
+                      "left swipe should reveal the Delete button")
+    }
+
     // MARK: - Helpers
 
     private func makeApp() -> XCUIApplication {
